@@ -5,8 +5,8 @@ from django.contrib.auth import login, logout, authenticate
 from django.http import JsonResponse
 from django.utils import timezone
 import random
-
-from .models import PartidaBingo, CartonPartidaBingo, Carton, Jugador, Bingo
+import json
+from .models import PartidaBingo, CartonPartidaBingo, Carton, Jugador, Bingo, MensajeChat
 from .forms import RegistroJugadorForm
 from .bingo_patterns import verificar_ganador, MODALIDADES, celdas_preview
 

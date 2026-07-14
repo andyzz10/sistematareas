@@ -57,7 +57,6 @@ class Jugador(models.Model):
     estadocuentajugador = models.CharField(max_length=20, default='Activo')
 
 class PartidaBingo(models.Model):
-    haydesempate = models.BooleanField(default=False)
     idpartidabingo = models.AutoField(primary_key=True)
     # Le agregamos null=True, blank=True para que las partidas antiguas no den error
     idbingo = models.ForeignKey(Bingo, on_delete=models.CASCADE, db_column='idbingo', null=True, blank=True)
