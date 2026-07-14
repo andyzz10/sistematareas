@@ -3,10 +3,12 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth import login, logout, authenticate
 from django.http import JsonResponse
+from django.utils import timezone
 import random
 
 from .models import PartidaBingo, CartonPartidaBingo, Carton, Jugador, Bingo
 from .forms import RegistroJugadorForm
+from .bingo_patterns import verificar_ganador, MODALIDADES, celdas_preview
 
 # ==========================================
 # RUTAS DE INICIO Y AUTENTICACIÓN
@@ -17,8 +19,15 @@ def home(request):
     proximos_bingos = Bingo.objects.filter(
         estadobingo__in=['Programado', 'En Curso']
     ).order_by('fechaprogramadabingo')[:6] # Mostramos un máximo de 6 en el inicio
-    
-    return render(request, 'home.html', {'bingos': proximos_bingos})
+
+    # Armamos la grilla 5x5 de cada modalidad para "Academia CoopBingo"
+    modalidades = []
+    for nombre in MODALIDADES:
+        celdas = celdas_preview(nombre)
+        grilla = [[(f, c) in celdas for c in range(5)] for f in range(5)]
+        modalidades.append({'nombre': nombre, 'grilla': grilla})
+
+    return render(request, 'home.html', {'bingos': proximos_bingos, 'modalidades': modalidades})
 
 def signup(request):
     if request.method == 'GET':
@@ -146,8 +155,37 @@ def api_sacar_balota(request, idpartidabingo):
         partida.bolascantadas = sacadas
         partida.ultimabola = nueva
         partida.estadopartida = 'En Juego'
+
+        # === VALIDACIÓN DE GANADOR (cualquier modalidad) ===
+        ganadores = []
+        cartones_partida = CartonPartidaBingo.objects.filter(
+            idpartida=partida
+        ).exclude(estadocarton='Anulado')
+
+        for cp in cartones_partida:
+            if verificar_ganador(sacadas, cp.idcarton.matriznumeros, partida.modalidadvictoria):
+                cp.esganador = True
+                cp.fechaganador = timezone.now()
+                cp.save()
+                ganadores.append(cp)
+
+        if ganadores:
+            # Si hay más de un ganador simultáneo, se marca desempate (según modelo E-R)
+            partida.idbingadores = [g.idcartonpartida for g in ganadores]
+            partida.haydesempate = len(ganadores) > 1
+            if len(ganadores) == 1:
+                partida.idjugadorganador = ganadores[0].idjugador
+            partida.estadopartida = 'Verificando'
+            partida.horafin = timezone.now()
+
         partida.save()
-        return JsonResponse({'nueva_balota': nueva, 'balotas': partida.bolascantadas})
+        return JsonResponse({
+            'nueva_balota': nueva,
+            'balotas': partida.bolascantadas,
+            'hay_ganador': bool(ganadores),
+            'hay_desempate': partida.haydesempate,
+            'ganadores': [g.idjugador.aliasjugador or g.idjugador.nombresjugador for g in ganadores],
+        })
         
     return JsonResponse({'error': 'No hay más balotas'}, status=400)
 from django.views.decorators.csrf import csrf_exempt
@@ -170,4 +208,4 @@ def api_enviar_mensaje(request, idbingo):
             mensaje=datos['mensaje']
         )
         return JsonResponse({'status': 'ok'})
-    return JsonResponse({'error': 'Solo POST'}, status=400) 
+    return JsonResponse({'error': 'Solo POST'}, status=400)
