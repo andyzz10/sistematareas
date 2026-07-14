@@ -1,10 +1,145 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<main class="container py-5">
-    <div class="card card-body text-center">
-        <h1 class="display-1">Home</h1>
-        <p>Bienvenido a la aplicación de tareas con Django.</p>
+<style>
+    /* ================= DISEÑO HERO ================= */
+    .hero-section { min-height: 55vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; background-color: #f8f9fc; padding: 4rem 1rem;}
+    .hero-title { font-size: 3rem; font-weight: 800; color: #1a202c; letter-spacing: -1px; margin-bottom: 1rem; }
+    .hero-subtitle { font-size: 1.15rem; color: #64748b; margin-bottom: 2.5rem; max-width: 600px;}
+    .btn-outline-custom { border: 2px solid #0d6efd; color: #0d6efd; border-radius: 30px; padding: 10px 30px; font-weight: 600; transition: 0.3s;}
+    .btn-outline-custom:hover { background-color: #0d6efd; color: white;}
+    .btn-solid-custom { background-color: #0d6efd; color: white; border-radius: 30px; padding: 10px 30px; font-weight: 600; transition: 0.3s; box-shadow: 0 4px 15px rgba(13, 110, 253, 0.3); border: 2px solid #0d6efd;}
+    .btn-solid-custom:hover { background-color: #0b5ed7; color: white; transform: translateY(-2px);}
+    .scroll-down { margin-top: 3rem; color: #64748b; font-weight: 600; text-decoration: none; font-size: 0.95rem; transition: 0.2s;}
+    .scroll-down:hover { color: #1a202c; }
+
+    /* ================= DISEÑO TARJETAS ================= */
+    .section-title { font-size: 2.5rem; font-weight: 800; color: #1a202c; }
+    .section-subtitle { color: #64748b; font-size: 1.1rem; margin-bottom: 3rem; }
+    
+    .bingo-card {
+        background: linear-gradient(145deg, #3f3398, #2e2473);
+        border-radius: 20px;
+        padding: 24px;
+        color: white;
+        border: none;
+        box-shadow: 0 10px 30px rgba(46, 36, 115, 0.2);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+    .bingo-card:hover { transform: translateY(-8px); box-shadow: 0 15px 40px rgba(46, 36, 115, 0.35); }
+    
+    .badge-estado { font-size: 0.75rem; font-weight: 800; padding: 6px 12px; border-radius: 6px; letter-spacing: 0.5px;}
+    .bg-curso { background-color: #ef4444; color: white; }
+    .bg-programado { background-color: #10b981; color: white; }
+    .badge-tipo { background-color: white; color: #2e2473; font-size: 0.75rem; font-weight: 800; padding: 6px 12px; border-radius: 6px; letter-spacing: 0.5px;}
+    
+    .bingo-date { color: #a5a0d6; font-size: 0.9rem; font-weight: 500; margin-top: 15px; margin-bottom: 5px; }
+    .bingo-title { font-size: 1.6rem; font-weight: 800; margin-bottom: 5px; line-height: 1.2;}
+    .bingo-desc { color: #a5a0d6; font-size: 0.95rem; margin-bottom: 20px; }
+    
+    .locked-box { background-color: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 12px 15px; font-size: 0.9rem; font-weight: 500; color: #d0cdeb; margin-bottom: 20px;}
+    
+    .pozo-container { border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px; margin-top: auto;}
+    .pozo-label { color: #a5a0d6; font-size: 0.85rem; font-weight: 500; margin-bottom: 0;}
+    .pozo-amount { color: #ffdd57; font-size: 2.2rem; font-weight: 900; line-height: 1; margin-bottom: 0;}
+    .entrada-amount { color: white; font-size: 1.4rem; font-weight: 800; line-height: 1; margin-bottom: 0;}
+    
+    .btn-sala { background-color: #ffdd57; color: #1a1447; font-weight: 800; border: none; border-radius: 10px; padding: 12px; width: 100%; transition: 0.3s; margin-top: 20px; font-size: 1.05rem;}
+    .btn-sala:hover { background-color: #ffc720; transform: scale(1.02);}
+</style>
+
+<!-- SECCIÓN BIENVENIDA HERO -->
+<section class="hero-section">
+    <h1 class="hero-title">Bienvenido a la red de BingoRed</h1>
+    <p class="hero-subtitle">Participa, juega y forma parte de nuestra comunidad interactiva. Gana premios en tiempo real desde la comodidad de tu casa.</p>
+    
+    <div class="d-flex gap-3">
+        {% if user.is_authenticated %}
+            <a href="{% url 'bingo_lobby' %}" class="btn btn-solid-custom text-decoration-none">Ir a mis Salas <i class="bi bi-arrow-right ms-1"></i></a>
+        {% else %}
+            <a href="{% url 'signin' %}" class="btn btn-outline-custom text-decoration-none">Ingresar</a>
+            <a href="{% url 'signup' %}" class="btn btn-solid-custom text-decoration-none">Registrarse</a>
+        {% endif %}
     </div>
-</main>
+
+    <a href="#eventos" class="scroll-down text-decoration-none">
+        Saber más <br><i class="bi bi-arrow-down"></i>
+    </a>
+</section>
+
+<!-- SECCIÓN PRÓXIMOS EVENTOS -->
+<section id="eventos" class="container py-5 mt-4 mb-5">
+    <div class="text-center mb-5">
+        <h2 class="section-title">Próximos Eventos</h2>
+        <p class="section-subtitle">Asegura tu cartón y participa por grandes premios</p>
+    </div>
+
+    <div class="row g-4 justify-content-center">
+        {% for bingo in bingos %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="bingo-card">
+                <!-- Badges -->
+                <div class="d-flex justify-content-between align-items-center">
+                    {% if bingo.estadobingo == 'En Curso' %}
+                        <span class="badge-estado bg-curso text-uppercase">{{ bingo.estadobingo }}</span>
+                    {% else %}
+                        <span class="badge-estado bg-programado text-uppercase">{{ bingo.estadobingo }}</span>
+                    {% endif %}
+                    <span class="badge-tipo text-uppercase">{{ bingo.tipobingo }}</span>
+                </div>
+
+                <!-- Info -->
+                <p class="bingo-date"><i class="bi bi-calendar3"></i> {{ bingo.fechaprogramadabingo|date:"d M Y - H:i" }}</p>
+                <h3 class="bingo-title">{{ bingo.titulobingo }}</h3>
+                <p class="bingo-desc">{{ bingo.descripcionpremiomayor }}</p>
+
+                <!-- Caja Cerrada / Info -->
+                <div class="locked-box d-flex align-items-center">
+                    {% if user.is_authenticated %}
+                        <i class="bi bi-unlock-fill text-success me-2 fs-5"></i>
+                        <span>Acceso permitido. ¡Ve a tu lobby!</span>
+                    {% else %}
+                        <i class="bi bi-lock-fill text-warning me-2 fs-5"></i>
+                        <span>Sala Privada (Inicia sesión para entrar)</span>
+                    {% endif %}
+                </div>
+
+                <!-- Precios y Pozo -->
+                <div class="pozo-container mt-auto">
+                    <div class="d-flex justify-content-between align-items-end">
+                        <div>
+                            <p class="pozo-label">Pozo Mayor</p>
+                            <p class="pozo-amount"><i class="bi bi-gem text-info fs-4"></i> {{ bingo.premiomayor }}</p>
+                        </div>
+                        <div class="text-end">
+                            <p class="pozo-label">Valor Entrada</p>
+                            <p class="entrada-amount">${{ bingo.preciocarton }}</p>
+                        </div>
+                    </div>
+
+                    {% if user.is_authenticated %}
+                        <a href="{% url 'bingo_lobby' %}" class="btn btn-sala text-decoration-none text-center">
+                            <i class="bi bi-door-open-fill me-1"></i> Ir a la Sala
+                        </a>
+                    {% else %}
+                        <a href="{% url 'signin' %}" class="btn btn-sala text-decoration-none text-center">
+                            <i class="bi bi-box-arrow-in-right me-1"></i> Iniciar Sesión para Jugar
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <!-- Mensaje si no hay eventos en base de datos -->
+        <div class="col-12 text-center py-5">
+            <i class="bi bi-calendar-x text-muted" style="font-size: 4rem;"></i>
+            <h4 class="mt-3 text-muted">Aún no hay eventos programados.</h4>
+            <p class="text-muted">¡Vuelve pronto para ver los nuevos bingos!</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
 {% endblock %}

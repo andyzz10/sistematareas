@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<main class="container py-5">
+    <div class="row">
+        <div class="col-md-6 offset-md-3">
+            <div class="card shadow">
+                <div class="card-header bg-warning text-dark text-center">
+                    <h3 class="mb-0">Lobby de Bingo</h3>
+                </div>
+                <div class="card-body text-center">
+                    <p class="text-muted">Partidas Disponibles</p>
+                    
+                    <ul class="list-group mb-4">
+                        {% for p in partidas %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <strong>{{ p.nombreronda }}</strong> (Premio: ${{ p.valorpremio }})
+                                <a href="{% url 'bingo' p.idpartidabingo %}" class="btn btn-sm btn-success">Jugar</a>
+                            </li>
+                        {% empty %}
+                            <li class="list-group-item text-danger">No hay partidas activas. Créalas en el panel de Admin.</li>
+                        {% endfor %}
+                    </ul>
+
+                    <hr>
+                    <form method="POST">
+                        {% csrf_token %}
+                        <div class="mb-3 text-start">
+                            <label for="id_partida" class="form-label">O ingresa el ID de la partida:</label>
+                            <input type="number" class="form-control" id="id_partida" name="id_partida" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Entrar a la Partida</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+{% endblock %}

@@ -1,109 +1,173 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.utils import timezone
 from django.contrib.auth.decorators import login_required
-from .models import Task
-from django.shortcuts import render, redirect
-from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
-from django.contrib.auth.models import User
+from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth import login, logout, authenticate
-from django.db import IntegrityError
-from .forms import TaskForm
+from django.http import JsonResponse
+import random
+
+from .models import PartidaBingo, CartonPartidaBingo, Carton, Jugador, Bingo
+from .forms import RegistroJugadorForm
+
+# ==========================================
+# RUTAS DE INICIO Y AUTENTICACIÓN
+# ==========================================
 
 def home(request):
-    return render(request, 'home.html')
+    # Traemos los próximos bingos (Programados o En Curso) ordenados por fecha
+    proximos_bingos = Bingo.objects.filter(
+        estadobingo__in=['Programado', 'En Curso']
+    ).order_by('fechaprogramadabingo')[:6] # Mostramos un máximo de 6 en el inicio
+    
+    return render(request, 'home.html', {'bingos': proximos_bingos})
 
 def signup(request):
     if request.method == 'GET':
-        return render(request, 'signup.html', {'form': UserCreationForm})
+        return render(request, 'signup.html', {'form': RegistroJugadorForm()})
     else:
-        try:
-            user = User.objects.create_user(
-                username=request.POST['username'],
-                password=request.POST['password1']
+        form = RegistroJugadorForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            # Guardamos la cédula en nuestra tabla Jugador (relacionada al modelo E-R)
+            Jugador.objects.create(
+                usuario_django=user,
+                nombresjugador=user.username,
+                aliasjugador=user.username,
+                cedulaidentidadjugador=form.cleaned_data['cedula']
             )
-            user.save()
             login(request, user)
-            return redirect('home')
-        except IntegrityError:
-            return render(request, 'signup.html', {
-                'form': UserCreationForm,
-                'error': 'El usuario ya existe'
+            return redirect('bingo_lobby')
+        else:
+            return render(request, 'signup.html', {'form': form, 'error': 'Revisa los datos ingresados.'})
+
+def signin(request):
+    if request.method == 'GET':
+        return render(request, 'signin.html', {'form': AuthenticationForm()})
+    else:
+        user = authenticate(request, username=request.POST['username'], password=request.POST['password'])
+        if user is None:
+            return render(request, 'signin.html', {
+                'form': AuthenticationForm(),
+                'error': 'Usuario o contraseña incorrectos'
             })
+        else:
+            login(request, user)
+            return redirect('bingo_lobby')
 
 def signout(request):
     logout(request)
     return redirect('home')
 
-def signin(request):
-    if request.method == 'GET':
-        return render(request, 'signin.html', {'form': AuthenticationForm})
-    else:
-        user = authenticate(request, username=request.POST['username'], password=request.POST['password'])
-        if user is None:
-            return render(request, 'signin.html', {
-                'form': AuthenticationForm,
-                'error': 'Usuario o contraseña incorrectos'
-            })
-        else:
-            login(request, user)
-            return redirect('home')
+
+# ==========================================
+# LÓGICA DEL BINGO VIRTUAL (MODELO E-R)
+# ==========================================
+
 @login_required
-def tasks(request):
-    tasks = Task.objects.filter(user=request.user)
-    return render(request, 'tasks.html', {'tasks': tasks})
-@login_required
-def create_task(request):
-    if request.method == 'GET':
-        # Muestra el formulario vacío
-        return render(request, 'create_task.html', {'form': TaskForm()})
-    else:
-        try:
-            # Recibe los datos, los asocia al usuario logueado y guarda
-            form = TaskForm(request.POST)
-            new_task = form.save(commit=False)
-            new_task.user = request.user
-            new_task.save()
-            return redirect('tasks')
-        except ValueError:
-            return render(request, 'create_task.html', {
-                'form': TaskForm(), 
-                'error': 'Error al guardar la tarea, revisa los datos.'
-            })
-@login_required
-def task_detail(request, task_id):
-    # Busca la tarea, pero SOLO si pertenece al usuario logueado
-    task = get_object_or_404(Task, pk=task_id, user=request.user)
+def bingo_lobby(request):
+    if request.method == 'POST':
+        partida_id = request.POST.get('id_partida', '').strip()
+        if partida_id:
+            return redirect('bingo', idpartidabingo=partida_id)
     
-    if request.method == 'GET':
-        # Muestra el formulario con los datos de la tarea llenos
-        form = TaskForm(instance=task)
-        return render(request, 'task_detail.html', {'task': task, 'form': form})
-    else:
-        try:
-            # Actualiza los datos de la tarea
-            form = TaskForm(request.POST, instance=task)
-            form.save()
-            return redirect('tasks')
-        except ValueError:
-            return render(request, 'task_detail.html', {
-                'task': task, 
-                'form': form, 
-                'error': 'Error actualizando la tarea.'
-            })
+    partidas_activas = PartidaBingo.objects.exclude(estadopartida='Finalizada')
+    return render(request, 'bingo_lobby.html', {'partidas': partidas_activas})
 
 @login_required
-def complete_task(request, task_id):
-    task = get_object_or_404(Task, pk=task_id, user=request.user)
-    if request.method == 'POST':
-        # Le pone la fecha y hora actual para marcarla como completada
-        task.datecompleted = timezone.now()
-        task.save()
-        return redirect('tasks')
+def bingo_view(request, idpartidabingo):
+    partida = get_object_or_404(PartidaBingo, pk=idpartidabingo)
+    jugador = get_object_or_404(Jugador, usuario_django=request.user)
+    
+    # Buscamos si el jugador ya tiene un cartón en esta partida
+    carton_partida = CartonPartidaBingo.objects.filter(idjugador=jugador, idpartida=partida).first()
+
+    # Si el usuario presiona el botón "Generar mi Cartón"
+    if request.method == 'POST' and 'generar_carton' in request.POST:
+        if not carton_partida:
+            matriz = {
+                'B': random.sample(range(1, 16), 5),
+                'I': random.sample(range(16, 31), 5),
+                'N': random.sample(range(31, 46), 4),
+                'G': random.sample(range(46, 61), 5),
+                'O': random.sample(range(61, 76), 5),
+            }
+            matriz['N'].insert(2, "FREE")
+            
+            # 1. Creamos el cartón físico
+            nuevo_carton = Carton.objects.create(
+                codigocarton=f"C-{partida.idpartidabingo}-{jugador.idjugador}-{random.randint(1000,9999)}",
+                matriznumeros=matriz
+            )
+            # 2. Lo enlazamos al jugador y a la partida
+            carton_partida = CartonPartidaBingo.objects.create(
+                idjugador=jugador, 
+                idpartida=partida, 
+                idcarton=nuevo_carton
+            )
+        return redirect('bingo', idpartidabingo=partida.idpartidabingo)
+
+    # Preparamos las filas para pintar el cartón si es que ya existe
+    filas = []
+    if carton_partida:
+        matriz_data = carton_partida.idcarton.matriznumeros
+        for i in range(5):
+            filas.append([
+                matriz_data['B'][i], matriz_data['I'][i], matriz_data['N'][i],
+                matriz_data['G'][i], matriz_data['O'][i]
+            ])
+
+    return render(request, 'bingo.html', {
+        'partida': partida,
+        'carton': carton_partida.idcarton if carton_partida else None,
+        'filas': filas,
+        'tiene_carton': bool(carton_partida)
+    })
 
 @login_required
-def delete_task(request, task_id):
-    task = get_object_or_404(Task, pk=task_id, user=request.user)
+def api_estado_partida(request, idpartidabingo):
+    partida = get_object_or_404(PartidaBingo, pk=idpartidabingo)
+    return JsonResponse({'balotas': partida.bolascantadas})
+
+@login_required
+def api_sacar_balota(request, idpartidabingo):
+    if not request.user.is_superuser:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+    partida = get_object_or_404(PartidaBingo, pk=idpartidabingo)
+    
+    if partida.estadopartida == 'Finalizada':
+        return JsonResponse({'error': 'Partida Finalizada'}, status=400)
+
+    sacadas = partida.bolascantadas
+    disponibles = [n for n in range(1, 76) if n not in sacadas]
+    
+    if disponibles:
+        nueva = random.choice(disponibles)
+        sacadas.append(nueva)
+        partida.bolascantadas = sacadas
+        partida.ultimabola = nueva
+        partida.estadopartida = 'En Juego'
+        partida.save()
+        return JsonResponse({'nueva_balota': nueva, 'balotas': partida.bolascantadas})
+        
+    return JsonResponse({'error': 'No hay más balotas'}, status=400)
+from django.views.decorators.csrf import csrf_exempt
+
+@login_required
+def api_obtener_mensajes(request, idbingo):
+    mensajes = MensajeChat.objects.filter(idbingo=idbingo).order_by('fechahora')
+    data = [{'usuario': m.usuario, 'mensaje': m.mensaje} for m in mensajes]
+    return JsonResponse({'mensajes': data})
+
+@csrf_exempt # Necesario para la petición AJAX
+@login_required
+def api_enviar_mensaje(request, idbingo):
     if request.method == 'POST':
-        # Borra la tarea de la base de datos
-        task.delete()
-        return redirect('tasks')
+        datos = json.loads(request.body)
+        bingo = get_object_or_404(Bingo, pk=idbingo)
+        MensajeChat.objects.create(
+            idbingo=bingo,
+            usuario=request.user.username,
+            mensaje=datos['mensaje']
+        )
+        return JsonResponse({'status': 'ok'})
+    return JsonResponse({'error': 'Solo POST'}, status=400) 

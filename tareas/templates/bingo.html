@@ -1,0 +1,180 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<main class="container py-5">
+    <div class="row">
+        <!-- COLUMNA IZQUIERDA: Juego (8 espacios) -->
+        <div class="col-md-8">
+            <div class="text-center">
+                <h1 class="mb-4">Partida: <span class="text-primary">{{ partida.nombreronda }}</span></h1>
+                
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">Balotas Jugadas</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="balotas-container" class="d-flex justify-content-center flex-wrap gap-2">
+                            <span class="text-muted" id="mensaje-espera">Esperando que inicie el sorteo...</span>
+                        </div>
+                    </div>
+                </div>
+
+                {% if request.user.is_superuser %}
+                <div class="mb-4">
+                    <button id="btn-sacar-balota" class="btn btn-danger btn-lg shadow">
+                        Sacar Nueva Balota
+                    </button>
+                </div>
+                {% endif %}
+
+                <div class="card shadow mx-auto" style="max-width: 500px;">
+                    <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Jugador: {{ request.user.username }}</h5>
+                        {% if tiene_carton %}
+                            <small class="fw-bold">Cartón ID: {{ carton.codigocarton }}</small>
+                        {% endif %}
+                    </div>
+                    <div class="card-body p-0">
+                        {% if tiene_carton %}
+                            <table class="table table-bordered text-center mb-0 bingo-card" style="table-layout: fixed;">
+                                <thead class="bg-light fs-4">
+                                    <tr><th>B</th><th>I</th><th>N</th><th>G</th><th>O</th></tr>
+                                </thead>
+                                <tbody class="fs-5">
+                                    {% for fila in filas %}
+                                    <tr>
+                                        {% for numero in fila %}
+                                        <td class="bingo-cell align-middle" data-num="{{ numero }}">
+                                            {% if numero == 'FREE' %}
+                                                <span class="text-success fw-bold">FREE</span>
+                                            {% else %}
+                                                {{ numero }}
+                                            {% endif %}
+                                        </td>
+                                        {% endfor %}
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        {% else %}
+                            <div class="p-5 text-center">
+                                <h4 class="mt-2">Aún no tienes cartón</h4>
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <button type="submit" name="generar_carton" class="btn btn-success btn-lg shadow-sm mt-2">
+                                        Generar mi Cartón
+                                    </button>
+                                </form>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- COLUMNA DERECHA: Chat (4 espacios) -->
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-primary text-white">Chat de Sala</div>
+                <div class="card-body bg-light" style="height: 400px; overflow-y: auto;" id="chat-box">
+                    <div id="mensajes-lista" class="d-flex flex-column gap-2">
+                        <!-- Los mensajes aparecerán aquí -->
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <div class="input-group">
+                        <input type="text" id="chat-input" class="form-control" placeholder="Escribe algo...">
+                        <button class="btn btn-primary" onclick="enviarMensaje()">Enviar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<style>
+    .bingo-cell { height: 75px; vertical-align: middle; font-weight: 500; transition: 0.3s; }
+    .marcada { background-color: #28a745 !important; color: white; font-weight: bold; border-radius: 8px;}
+    .balota-bola { width: 45px; height: 45px; border-radius: 50%; background: #0d6efd; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 1px 1px 4px rgba(0,0,0,0.3);}
+</style>
+
+<script>
+    const idPartida = "{{ partida.idpartidabingo }}";
+    const idBingo = "{{ partida.idbingo.idbingo }}";
+     
+    // Asegura tener la ID del bingo
+
+    // --- LÓGICA DE ACTUALIZACIÓN DEL BINGO ---
+    async function actualizarTablero() {
+        try {
+            const response = await fetch(`/api/bingo/${idPartida}/estado/`);
+            const data = await response.json();
+            const contenedor = document.getElementById('balotas-container');
+            const msgEspera = document.getElementById('mensaje-espera');
+            
+            if (data.balotas && data.balotas.length > 0 && msgEspera) msgEspera.style.display = 'none';
+            
+            const actuales = document.querySelectorAll('.balota-bola').length;
+            if (data.balotas && data.balotas.length > actuales) {
+                contenedor.innerHTML = '';
+                data.balotas.forEach(num => {
+                    const div = document.createElement('div');
+                    div.className = 'balota-bola';
+                    div.innerText = num;
+                    contenedor.appendChild(div);
+                });
+            }
+            if (data.balotas) {
+                data.balotas.forEach(num => {
+                    const celda = document.querySelector(`.bingo-cell[data-num='${num}']`);
+                    if(celda && !celda.classList.contains('marcada')) celda.classList.add('marcada');
+                });
+            }
+        } catch (e) { console.error("Error consultando el servidor:", e); }
+    }
+
+    // --- LÓGICA DEL CHAT ---
+    async function cargarMensajes() {
+        try {
+            const resp = await fetch(`/api/bingo/${idBingo}/mensajes/obtener/`);
+            const data = await resp.json();
+            const lista = document.getElementById('mensajes-lista');
+            lista.innerHTML = data.mensajes.map(m => `
+                <div class="p-2 bg-white border rounded shadow-sm">
+                    <strong>${m.usuario}:</strong> ${m.mensaje}
+                </div>
+            `).join('');
+            const box = document.getElementById('chat-box');
+            box.scrollTop = box.scrollHeight; // Auto scroll al último
+        } catch (e) { console.error("Error chat:", e); }
+    }
+
+    async function enviarMensaje() {
+        const input = document.getElementById('chat-input');
+        if(!input.value) return;
+        await fetch(`/api/bingo/${idBingo}/mensajes/enviar/`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ mensaje: input.value })
+        });
+        input.value = '';
+        cargarMensajes();
+    }
+
+    // Intervalos
+    setInterval(actualizarTablero, 2000);
+    setInterval(cargarMensajes, 3000);
+    actualizarTablero();
+    cargarMensajes();
+
+    const btn = document.getElementById('btn-sacar-balota');
+    if(btn) {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            await fetch(`/api/bingo/${idPartida}/sacar/`);
+            await actualizarTablero();
+            btn.disabled = false;
+        });
+    }
+</script>
+{% endblock %}
